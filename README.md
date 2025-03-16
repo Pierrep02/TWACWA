@@ -1,7 +1,8 @@
 # Combining DTDGNN with ACWA for link prediction
 ![Setup](https://github.com/Pierrep02/TWACWA/blob/main/Experiments.png)
 
-This repository contains a fork of BenchmarkTW updated for python 3.12. The models' embeddings are combined with a random walk-based approach for generating embeddings called ACWA[^1] to see if performances are improved compared to both alone. The repository also has an updated version of CTDNE used for ACWA.[^1] Yang, L., Chatelain, C., and Adam, S. Inductive anomaly detection in dynamic graphs with accumulative causal walk alignment. In Mining and Learning with Graphs Workshop@ ECMLPKDD 2024, 2024.
+This repository contains a fork of BenchmarkTW updated for python 3.12. The models' embeddings are combined with a random walk-based approach for generating embeddings called ACWA[^1] to see if performances are improved compared to both alone. The repository also has an updated version of CTDNE used for ACWA.
+[^1]: Yang, L., Chatelain, C., and Adam, S. Inductive anomaly detection in dynamic graphs with accumulative causal walk alignment. In Mining and Learning with Graphs Workshop@ ECMLPKDD 2024, 2024.
 
 ## Installation 
 ```
