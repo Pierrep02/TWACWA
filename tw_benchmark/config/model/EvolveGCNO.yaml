@@ -6,7 +6,7 @@ clip_grad: True
 name: EvolveGCNO
 
 link_pred:
-  _target_: dgt.models.EvolveGCNO
+  _target_: tw_benchmark.models.EvolveGCNO
   num_nodes: ${dataset.num_nodes}
   num_features: ${sub:${dataset.timestamp},1}
   in_channels: 128

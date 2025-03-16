@@ -5,7 +5,7 @@ name: LSTMGT
 pred_next: False
 clip_grad: False
 link_pred: 
-  _target_: dgt.models.LSTMGT
+  _target_: tw_benchmark.models.LSTMGT
   num_nodes: ${dataset.num_nodes}
   num_features: ${sub:${dataset.timestamp},1}
   num_classes: ${dataset.num_classes}

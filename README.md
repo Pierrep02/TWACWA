@@ -1,40 +1,30 @@
-# Temporal receptive field in dynamic graph learning: A comprehensive analysis
-![tw](https://github.com/ykrmm/BenchmarkTW/blob/main/tw.png)
+# Combining DTDGNN with ACWA for link prediction
+![Setup](https://github.com/Pierrep02/TWACWA/blob/main/Experiments.png)
+
+This repository contains a fork of BenchmarkTW updated for python 3.12. The models' embeddings are combined with a random walk-based approach for generating embeddings called ACWA[^1] to see if performances are improved compared to both alone. The repository also has an updated version of CTDNE used for ACWA.[^1] Yang, L., Chatelain, C., and Adam, S. Inductive anomaly detection in dynamic graphs with accumulative causal walk alignment. In Mining and Learning with Graphs Workshop@ ECMLPKDD 2024, 2024.
 
 ## Installation 
 ```
-conda create -n twdgnn python=3.9
-conda activate twdgnn
-conda install pytorch==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia
-pip install torch_geometric
-pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
-pip install torchmetrics
-pip install torch-geometric-temporal
+# a python 3.12 environment is recommended
+pip install -r requirements.txt
 pip install -e .
+pip install -e CTDNE
 ```
 
-## Launch paper experiments 
-Exemple launch experiments of EGCN on UNtrade: 
+## Launch experiments 
+First launch the following experiments of STGCN on Enron to ensure everything works: 
 ```
 # in config/wandb_conf/wandb_default.yaml put your wandb info
 
 wandb login
-mv scripts/paper_scripts/egcnh/egcn_searchtw_trade.sh scripts/egcn_searchtw_trade.sh
 sh scripts/egcn_searchtw_trade.sh
 ```
+After this you can launch any experiments in scripts/ACWA_scripts
+
 ## Datasets 
 All datasets use in our experiments are in the 'datasets' folder. 
 
-## Citation
-Cite as : 
-```
-@misc{karmim2024temporalreceptivefielddynamic,
-      title={Temporal receptive field in dynamic graph learning: A comprehensive analysis}, 
-      author={Yannis Karmim and Leshanshui Yang and Raphaël Fournier S'Niehotta and Clément Chatelain and Sébastien Adam and Nicolas Thome},
-      year={2024},
-      eprint={2407.12370},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2407.12370}, 
-}
-```
+## Notes
+A report of metrics of the experiments can be found here https://api.wandb.ai/links/pierrep02-personal/yx3k33u9 <br>
+Works on linux and windows (with a windows shell terminal such as Git) <br>
+Only STGCN and GCLSTM have been updated to work.

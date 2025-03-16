@@ -10,7 +10,7 @@ from torch_geometric_temporal.nn.recurrent.evolvegcno import GCNConv_Fixed_W, gl
 from tw_benchmark.models.reg_mlp import RegressionModel
 # Original source code from : 
 # https://pytorch-geometric-temporal.readthedocs.io/en/latest/_modules/torch_geometric_temporal/nn/recurrent/evolvegcnh.html#EvolveGCNH
-# This is the modified version for the link prediction task with the same training protocol as the other models (DySAT, DGT…)
+# This is the modified version for the link prediction task with the same training protocol as the other models (DySAT, tw_benchmark…)
 
 
 

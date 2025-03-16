@@ -3,6 +3,6 @@ evolving: True
 one_hot: False
 
 node_classif: 
-  _target_: dgt.models.MLP
+  _target_: tw_benchmark.models.MLP
   features_dim: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}

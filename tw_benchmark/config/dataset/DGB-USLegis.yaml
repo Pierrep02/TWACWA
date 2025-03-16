@@ -8,7 +8,7 @@ num_classes: 2
 
 dts: 
   link_pred:
-    _target_: dgt.datasets.LinkPredData
+    _target_: tw_benchmark.datasets.LinkPredData
     datadir: ${dataset.datadir}
     dataname: ${dataset.name}
     dgb: True

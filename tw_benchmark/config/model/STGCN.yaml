@@ -19,4 +19,7 @@ link_pred:
   bias: True
   one_hot: ${model.one_hot}
   undirected: True
+  use_ACWA: True
+  ACWA_dim: 16
+  ACWA_linear: False
 

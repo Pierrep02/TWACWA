@@ -6,7 +6,7 @@ pred_next: False
 clip_grad: False
 
 link_pred:
-  _target_: dgt.models.VGRNN
+  _target_: tw_benchmark.models.VGRNN
   num_nodes: ${dataset.num_nodes}
   h_dim: 32
   z_dim: 16

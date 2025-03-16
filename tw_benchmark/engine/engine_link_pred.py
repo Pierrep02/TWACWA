@@ -13,6 +13,7 @@ from omegaconf import DictConfig
 from hydra.utils import instantiate
 from torcheval.metrics import BinaryAUROC, BinaryAUPRC
 from sklearn.metrics import roc_auc_score, average_precision_score
+from numpy.typing import ArrayLike
 
 from tw_benchmark.engine import EngineBase
 from tw_benchmark.datasets import LinkPredData, ListLinkPredDataset 
@@ -33,6 +34,7 @@ class EngineLinkPred(EngineBase):
         device: torch.device,
         dts: LinkPredData,
         logger: logging.Logger,
+        acwa_embedding: ArrayLike = None,
         *args: ArgsType,
         **kwargs: KwargsType,
     ) -> NoneType: # type: ignore
@@ -46,6 +48,7 @@ class EngineLinkPred(EngineBase):
         self.device = device
         self.logger = logger
         self.log_train = self.config.task.engine.log_train
+        self.acwa_embedding = acwa_embedding
     def update_metrics(self, pred: torch.Tensor, labels: torch.LongTensor):
         with torch.no_grad():
             for _,m in self.metrics.items(): 
@@ -72,6 +75,7 @@ class EngineLinkPred(EngineBase):
         for t in range(t_min, T_train):
             dataset_t = datasets.get_dataset_t(t)
             graphs_t = dataset_t.get_graphs()
+            embeds_t = torch.tensor(self.acwa_embedding[max(0,t-1)],device=self.device) if self.acwa_embedding is not None else None
             dataloader_t = instantiate(
                 self.config.task.engine.train_loader,
                 dataset=dataset_t,
@@ -81,8 +85,11 @@ class EngineLinkPred(EngineBase):
                 feed_dict = feed_dict_to_device(feed_dict, self.device)
                 self.optimizer.zero_grad()
                 with torch.autocast(device_type=('cuda'), dtype=torch.float16, enabled=self.use_amp):
-                    loss, pos_prob, neg_prob = self.model.get_loss_link_pred(feed_dict, graphs_t)  # [B,C] B: batch size, C: number of classes           
-                    
+                    if self.config.model.link_pred.use_ACWA:
+                        loss, pos_prob, neg_prob = self.model.get_loss_link_pred(feed_dict, graphs_t, embeds_t)  # [B,C] B: batch size, C: number of classes           
+                    else:
+                        loss, pos_prob, neg_prob = self.model.get_loss_link_pred(feed_dict, graphs_t)
+
                     losses.append(loss.item())
 
                 self.scaler.scale(loss).backward()
@@ -116,6 +123,7 @@ class EngineLinkPred(EngineBase):
         for t in range(t_min,t_max):
             dataset_t = datasets.get_dataset_t(t)
             graphs_t = dataset_t.get_graphs()
+            embeds_t = torch.tensor(self.acwa_embedding[max(0,t-1)],device=self.device) if self.acwa_embedding is not None else None
             dataloader_t = instantiate(
                 self.config.task.engine.train_loader,
                 dataset=dataset_t,
@@ -124,7 +132,10 @@ class EngineLinkPred(EngineBase):
             for feed_dict in dataloader_t:
                 feed_dict = feed_dict_to_device(feed_dict,self.device)
                 with torch.autocast(device_type=('cuda'), dtype=torch.float16, enabled=self.use_amp):
-                    pos_prob,neg_prob = self.model.score_eval(feed_dict,graphs_t)
+                    if self.config.model.link_pred.use_ACWA:
+                        pos_prob,neg_prob = self.model.score_eval(feed_dict,graphs_t,embeds_t)
+                    else:
+                        pos_prob,neg_prob = self.model.score_eval(feed_dict,graphs_t)
                 pred = torch.cat((pos_prob,neg_prob))
                 labels = torch.cat((torch.ones_like(pos_prob,device=self.device), torch.zeros_like(neg_prob,device=self.device)))
                 if self.use_val:
@@ -183,14 +194,14 @@ class EngineLinkPred(EngineBase):
         epoch = self.config.task.engine.epoch
         eval_every = self.config.task.engine.eval_every
         n_runs = self.config.task.engine.n_runs
-        seeds = np.arange(n_runs)
+        seeds = list(range(n_runs))
         all_ap_test = []
         all_roc_auc_test = []
         self.use_val = not(self.dts.T_val == self.dts.T_train)
         
         for i in range(n_runs):
             self.logger.info("Run {}/{}".format(i+1,n_runs))
-            
+
             # Handle Reproducibility 
             torch.manual_seed(seeds[i])
             np.random.seed(seeds[i])
@@ -251,7 +262,7 @@ class EngineLinkPred(EngineBase):
             for ep in range(epoch):
                 # train
                 self.logger.info(f"Epoch {ep}")
-                if self.config.model.name != 'EdgeBank': # EdgeBank do not need to be trained
+                if self.config.model.name != 'EdgeBank' and self.config.model.name != 'ACWA': # EdgeBank and ACWA do not need to be trained
                     et = time.time()
                     mean_loss, scores = self.train(train_dts,t_train)
                     st = time.time()
@@ -277,6 +288,9 @@ class EngineLinkPred(EngineBase):
                         if i == 0 : 
                             for name,score in scores.items():
                                 wandb.log({name+" Val "+str(self.data_name): score},step=ep)
+                            if self.config.model.link_pred.use_ACWA:
+                                wandb.log({"ACWA Ratio": self.model.ACWA_ratio.item()},step=ep)
+                                self.logger.info(f"ACWA Ratio: {self.model.ACWA_ratio.item()}")
                         current_val_ap = scores['AP']
                         self.logger.info(f"AP Val: {current_val_ap}")
                         val_ap.append(current_val_ap)

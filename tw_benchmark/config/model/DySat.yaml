@@ -6,7 +6,7 @@ score: 'none' # If true, Model considers the score of the links
 clip_grad: False
 
 node_classif: 
-  _target_: dgt.models.DySat
+  _target_: tw_benchmark.models.DySat
   num_nodes: ${dataset.num_nodes}
   num_features: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}
@@ -45,7 +45,7 @@ link_pred:
   task_name: 'link_pred'
 
 node_reg:
-  _target_: dgt.models.DySat
+  _target_: tw_benchmark.models.DySat
   num_nodes: ${dataset.num_nodes}
   num_features: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}

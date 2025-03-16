@@ -266,8 +266,12 @@ class DCRNN(torch.nn.Module):
         else:
             tw = 0   
         self.final_emb = self.forward(graphs[tw:])
+        # Concatenate all 3 node embeddings with ACWA
+        # Node 1
         emb_source = self.final_emb[node_1,time,:]
+        # Node 2
         emb_pos  = self.final_emb[node_2,time,:]
+        # Node 2 negative
         emb_neg = self.final_emb[node_2_negative,time,:]
         pos_score = torch.sum(emb_source*emb_pos, dim=1)
         neg_score = torch.sum(emb_source*emb_neg, dim=1)

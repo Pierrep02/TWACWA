@@ -5,13 +5,11 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import Dataset, Sampler
-from tw_benchmark.engine import engine_reg
 from hydra.utils import instantiate
 from omegaconf.dictconfig import DictConfig
 
 
 NoneType = type(None)
-
 
 class Getter:
     """

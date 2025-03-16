@@ -1,5 +1,4 @@
 
-entity: your_wandb_entity
-project_link_pred: BenchmarkTW
+entity: 
+project_link_pred: 
 name: ${model.name}_${dataset.name}
-

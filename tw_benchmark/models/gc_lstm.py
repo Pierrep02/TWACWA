@@ -1,10 +1,11 @@
 import torch
+import torch.nn as nn
 from torch.nn import Parameter
 from torch.nn.modules.loss import BCEWithLogitsLoss, MSELoss
 from torch_geometric.nn import ChebConv
 from torch_geometric.nn.inits import glorot, zeros
-from torch_geometric.utils import to_undirected
-from tw_benchmark.models.reg_mlp import RegressionModel
+
+
 class GCLSTM(torch.nn.Module):
     r"""An implementation of the the Integrated Graph Convolutional Long Short Term
     Memory Cell. For details see this paper: `"GC-LSTM: Graph Convolution Embedded LSTM
@@ -49,7 +50,9 @@ class GCLSTM(torch.nn.Module):
         bias: bool = True,
         one_hot: bool = False,
         undirected: bool = False,
-        task_name: str = "link_pred",
+        use_ACWA: bool = True,
+        ACWA_dim: int = 16,
+        ACWA_linear: bool = False,
     ):
         super(GCLSTM, self).__init__()
         self.num_nodes = num_nodes
@@ -62,15 +65,17 @@ class GCLSTM(torch.nn.Module):
         self.bias = bias
         self.one_hot = one_hot
         self.undirected = undirected
-        self.task_name = task_name
-        if self.task_name == "link_pred":
-            self.bceloss = BCEWithLogitsLoss()
-        elif self.task_name == "node_reg":
-            self.mseloss = MSELoss()
-        else:
-            raise ValueError("Task name not recognized")
+        self.bceloss = BCEWithLogitsLoss()
         self._create_parameters_and_layers()
         self._set_parameters()
+
+        self.use_ACWA = use_ACWA
+        if use_ACWA:
+            self.ACWA_dim = ACWA_dim
+            self.use_ACWA_linear = ACWA_linear
+            self.ACWA_ratio = nn.parameter.Parameter(torch.tensor(0.2))
+            if self.use_ACWA_linear:
+                self.ACWA_linear = nn.Linear(self.ACWA_dim + self.out_channels, self.out_channels)
 
     def set_device(self,device):
         self.device = device
@@ -136,9 +141,6 @@ class GCLSTM(torch.nn.Module):
         self._create_forget_gate_parameters_and_layers()
         self._create_cell_state_parameters_and_layers()
         self._create_output_gate_parameters_and_layers()
-
-        if self.task_name == 'node_reg':
-            self.pred_reg = RegressionModel(self.in_channels,self.in_channels)
 
     def _set_parameters(self):
         glorot(self.W_i)
@@ -242,62 +244,66 @@ class GCLSTM(torch.nn.Module):
         final_emb = torch.stack(output, dim=1)
         return final_emb
     
-    def get_loss_link_pred(self, feed_dict,graphs):
+    def get_loss_link_pred(self, feed_dict,graphs, ACWA_embeddings=None):
+        pos_score, neg_score = self.compute_sim(feed_dict,graphs, ACWA_embeddings)
+        pos_loss = self.bceloss(pos_score, torch.ones_like(pos_score))
+        neg_loss = self.bceloss(neg_score, torch.zeros_like(neg_score))
+        graphloss = pos_loss + neg_loss
+            
+        return graphloss, pos_score.detach().sigmoid(), neg_score.detach().sigmoid()
+    
+    def score_eval(self,feed_dict,graphs, ACWA_embeddings=None):
+        with torch.no_grad():
+            pos_score, neg_score = self.compute_sim(feed_dict,graphs, ACWA_embeddings)     
+            return pos_score.sigmoid(),neg_score.sigmoid()
+        
+    # def compute_sim(self,feed_dict,graphs, ACWA_embeddings=None):
+    #     node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
+    #     # run gnn
+    #     if self.window > 0:
+    #         tw = max(0,len(graphs)-self.window)
+    #     else:
+    #         tw = 0 
+    #     final_emb = self.forward(graphs[tw:]) # [N, T, F]
+    #     final_emb = final_emb[:, -1, :] # [N, F]
+    #     if self.use_ACWA:
+    #         ACWA_embeddings = ACWA_embeddings * self.ACWA_ratio
+    #         final_emb = final_emb * (1 - self.ACWA_ratio)
+    #         concat_emb = torch.cat([final_emb, ACWA_embeddings.float()], dim=1)
+    #         if self.use_ACWA_linear:
+    #             final_emb = self.ACWA_linear(concat_emb)
+    #     emb_source = final_emb[node_1,:]
+    #     emb_pos  = final_emb[node_2,:]
+    #     emb_neg = final_emb[node_2_negative,:]
+    #     if self.use_ACWA:
 
+    #     pos_score = torch.sum(emb_source*emb_pos, dim=1)
+    #     neg_score = torch.sum(emb_source*emb_neg, dim=1)
+    #     return pos_score, neg_score
+
+    def compute_sim(self,feed_dict,graphs, ACWA_embeddings=None):
         node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
         # run gnn
         if self.window > 0:
             tw = max(0,len(graphs)-self.window)
         else:
-            tw = 0   
-        self.final_emb = self.forward(graphs[tw:])
-        emb_source = self.final_emb[node_1,-1,:]
-        emb_pos  = self.final_emb[node_2,-1,:]
-        emb_neg = self.final_emb[node_2_negative,-1,:]
+            tw = 0 
+        final_emb = self.forward(graphs[tw:]) # [N, T, F]
+        final_emb = final_emb[:, -1, :] # [N, F]
+        if self.use_ACWA:
+            final_emb = final_emb * (1 - self.ACWA_ratio)
+            ACWA_embeddings = ACWA_embeddings.float() * self.ACWA_ratio
+        emb_source = final_emb[node_1,:]
+        emb_pos  = final_emb[node_2,:]
+        emb_neg = final_emb[node_2_negative,:]
+        if self.use_ACWA:
+            emb_source = torch.cat((emb_source, ACWA_embeddings[node_1]), dim=1)
+            emb_pos = torch.cat((emb_pos, ACWA_embeddings[node_2]), dim=1)
+            emb_neg = torch.cat((emb_neg, ACWA_embeddings[node_2_negative]), dim=1)
+            if self.use_ACWA_linear:
+                emb_source = self.ACWA_linear(emb_source)
+                emb_pos = self.ACWA_linear(emb_pos)
+                emb_neg = self.ACWA_linear(emb_neg)
         pos_score = torch.sum(emb_source*emb_pos, dim=1)
         neg_score = torch.sum(emb_source*emb_neg, dim=1)
-        pos_loss = self.bceloss(pos_score, torch.ones_like(pos_score))
-        neg_loss = self.bceloss(neg_score, torch.zeros_like(neg_score))
-        graphloss = pos_loss + neg_loss
-        #import ipdb ; ipdb.set_trace()
-        return graphloss, pos_score.detach().sigmoid(), neg_score.detach().sigmoid()
-    
-    def get_loss_node_pred(self,feed_dict,graphs):
-        node, y, time  = feed_dict.values()
-        y = y.view(-1, 1)
-        # run gnn
-        if self.window > 0:
-            tw = max(0,len(graphs)-self.window)
-        else:
-            tw = 0   
-        final_emb = self.forward(graphs[tw:]) # [N, T, F]
-        emb_node = final_emb[node,time,:]
-        pred = self.pred_reg(emb_node)
-        graphloss = self.mseloss(pred, y)
-        return graphloss
-    
-    def score_eval(self,feed_dict,graphs):
-        with torch.no_grad():
-            node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
-            # run gnn
-            if self.window > 0:
-                tw = max(0,len(graphs)-self.window)
-            else:
-                tw = 0   
-            final_emb = self.forward(graphs[tw:]) # [N, T, F]
-            emb_source = final_emb[node_1, -1 ,:]
-            emb_pos  = final_emb[node_2, -1 ,:]
-            emb_neg = final_emb[node_2_negative, -1 ,:]
-            pos_score = torch.sum(emb_source*emb_pos, dim=1)
-            neg_score = torch.sum(emb_source*emb_neg, dim=1)        
-            return pos_score.sigmoid(),neg_score.sigmoid()
-        
-    def score_eval_node_reg(self,feed_dict,graphs):
-        node, y, time  = feed_dict.values()
-        y = y.view(-1, 1)
-        # run gnn
-        final_emb = self.forward(graphs) # [N, T, F]
-        emb_node = final_emb[node,time-1,:]
-        pred = self.pred_reg(emb_node)
-        
-        return pred.squeeze()
+        return pos_score, neg_score

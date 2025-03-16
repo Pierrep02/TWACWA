@@ -10,7 +10,7 @@ num_classes: 2 # 2 nodes classes for DPPIN-Ito
 dts: 
   node_classif: 
     train:
-      _target_: dgt.datasets.ClassifData
+      _target_: tw_benchmark.datasets.ClassifData
       datadir: ${dataset.datadir}
       dataname: ${dataset.name}
       mode: train
@@ -20,7 +20,7 @@ dts:
 
 
     test: 
-      _target_: dgt.datasets.ClassifData
+      _target_: tw_benchmark.datasets.ClassifData
       datadir: ${dataset.datadir}
       dataname: ${dataset.name}
       mode: test
@@ -29,7 +29,7 @@ dts:
       one_hot: ${model.one_hot}
   
   link_pred:
-    _target_: dgt.datasets.LinkPredData
+    _target_: tw_benchmark.datasets.LinkPredData
     datadir: ${dataset.datadir}
     dataname: ${dataset.name}
     evolving: ${model.evolving}

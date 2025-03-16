@@ -86,6 +86,10 @@ class STGCN(nn.Module):
             :class:`torch_geometric.transforms.LaplacianLambdaMax` transform.
         bias (bool, optional): If set to :obj:`False`, the layer will not learn
             an additive bias. (default: :obj:`True`)
+        use_ACWA (bool, optional): If set to :obj:`True`, the layer will use ACWA embeddings. (default: :obj:`False`)
+        ACWA_dim (int, optional): The dimension of the ACWA embeddings. (default: :obj:`16`)
+        ACWA_linear (bool, optional): If set to :obj:`True`, the layer will use a linear layer to combine ACWA embeddings with the output of the STGCN.
+            otherwise it will use a ratio between output and ACWA. (default: :obj:`False`)
 
     """
 
@@ -103,6 +107,9 @@ class STGCN(nn.Module):
         bias: bool = True,
         one_hot: bool = True,
         undirected: bool = True,
+        use_ACWA: bool = True,
+        ACWA_dim: int = 16,
+        ACWA_linear: bool = False,
     ):
         super(STGCN, self).__init__()
         self.num_nodes = num_nodes
@@ -143,7 +150,15 @@ class STGCN(nn.Module):
         )
 
         self._batch_norm = nn.BatchNorm2d(num_nodes)
-    
+        
+        self.use_ACWA = use_ACWA
+        if use_ACWA:
+            self.ACWA_dim = ACWA_dim
+            self.use_ACWA_linear = ACWA_linear
+            self.ACWA_ratio = nn.parameter.Parameter(torch.tensor(0.2))
+            if self.use_ACWA_linear:
+                self.ACWA_linear = nn.Linear(self.ACWA_dim + out_channels, out_channels)
+
     def set_device(self, device):
         self.device = device
             
@@ -179,8 +194,44 @@ class STGCN(nn.Module):
         T = T.permute(1, 0, 2)
         return T
     
-    def get_loss_link_pred(self, feed_dict,graphs):
+    def get_loss_link_pred(self, feed_dict,graphs, ACWA_embeddings=None):
+        pos_score, neg_score = self.compute_sim(feed_dict,graphs, ACWA_embeddings)
+        pos_loss = self.bceloss(pos_score, torch.ones_like(pos_score))
+        neg_loss = self.bceloss(neg_score, torch.zeros_like(neg_score))
+        graphloss = pos_loss + neg_loss
+            
+        return graphloss, pos_score.detach().sigmoid(), neg_score.detach().sigmoid()
+    
+    def score_eval(self,feed_dict,graphs, ACWA_embeddings=None):
+        with torch.no_grad():
+            pos_score, neg_score = self.compute_sim(feed_dict,graphs, ACWA_embeddings)     
+            return pos_score.sigmoid(),neg_score.sigmoid()
+        
+    # def compute_sim(self,feed_dict,graphs, ACWA_embeddings=None):
+    #     node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
+    #     # run gnn
+    #     if self.window > 0:
+    #         tw = max(0,len(graphs)-self.window)
+    #     else:
+    #         tw = 0 
+    #     final_emb = self.forward(graphs[tw:]) # [N, T, F]
+    #     final_emb = final_emb[:, -1, :] # [N, F]
+    #     if self.use_ACWA:
+    #         ACWA_embeddings = ACWA_embeddings * self.ACWA_ratio
+    #         final_emb = final_emb * (1 - self.ACWA_ratio)
+    #         concat_emb = torch.cat([final_emb, ACWA_embeddings.float()], dim=1)
+    #         if self.use_ACWA_linear:
+    #             final_emb = self.ACWA_linear(concat_emb)
+    #     emb_source = final_emb[node_1,:]
+    #     emb_pos  = final_emb[node_2,:]
+    #     emb_neg = final_emb[node_2_negative,:]
+    #     if self.use_ACWA:
 
+    #     pos_score = torch.sum(emb_source*emb_pos, dim=1)
+    #     neg_score = torch.sum(emb_source*emb_neg, dim=1)
+    #     return pos_score, neg_score
+
+    def compute_sim(self,feed_dict,graphs, ACWA_embeddings=None):
         node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
         # run gnn
         if self.window > 0:
@@ -188,29 +239,21 @@ class STGCN(nn.Module):
         else:
             tw = 0 
         final_emb = self.forward(graphs[tw:]) # [N, T, F]
-        emb_source = final_emb[node_1,-1,:]
-        emb_pos  = final_emb[node_2,-1,:]
-        emb_neg = final_emb[node_2_negative,-1,:]
+        final_emb = final_emb[:, -1, :] # [N, F]
+        if self.use_ACWA:
+            final_emb = final_emb * (1 - self.ACWA_ratio)
+            ACWA_embeddings = ACWA_embeddings.float() * self.ACWA_ratio
+        emb_source = final_emb[node_1,:]
+        emb_pos  = final_emb[node_2,:]
+        emb_neg = final_emb[node_2_negative,:]
+        if self.use_ACWA:
+            emb_source = torch.cat((emb_source, ACWA_embeddings[node_1]), dim=1)
+            emb_pos = torch.cat((emb_pos, ACWA_embeddings[node_2]), dim=1)
+            emb_neg = torch.cat((emb_neg, ACWA_embeddings[node_2_negative]), dim=1)
+            if self.use_ACWA_linear:
+                emb_source = self.ACWA_linear(emb_source)
+                emb_pos = self.ACWA_linear(emb_pos)
+                emb_neg = self.ACWA_linear(emb_neg)
         pos_score = torch.sum(emb_source*emb_pos, dim=1)
         neg_score = torch.sum(emb_source*emb_neg, dim=1)
-        pos_loss = self.bceloss(pos_score, torch.ones_like(pos_score))
-        neg_loss = self.bceloss(neg_score, torch.zeros_like(neg_score))
-        graphloss = pos_loss + neg_loss
-            
-        return graphloss, pos_score.detach().sigmoid(), neg_score.detach().sigmoid()
-    
-    def score_eval(self,feed_dict,graphs):
-        with torch.no_grad():
-            node_1, node_2, node_2_negative, _, _, _, time  = feed_dict.values()
-            if self.window > 0:
-                tw = max(0,len(graphs)-self.window)
-            else:
-                tw = 0 
-            final_emb = self.forward(graphs[tw:]) # [N, T, F]
-            # time-1 because we want to predict the next time step in eval
-            emb_source = final_emb[node_1, -1 ,:]
-            emb_pos  = final_emb[node_2, -1 ,:]
-            emb_neg = final_emb[node_2_negative, -1 ,:]
-            pos_score = torch.sum(emb_source*emb_pos, dim=1)
-            neg_score = torch.sum(emb_source*emb_neg, dim=1)        
-            return pos_score.sigmoid(),neg_score.sigmoid()
+        return pos_score, neg_score

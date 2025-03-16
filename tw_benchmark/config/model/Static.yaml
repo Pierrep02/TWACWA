@@ -6,7 +6,7 @@ pred_next: False
 clip_grad: False
 
 node_classif: 
-  _target_: dgt.models.StaticGNN
+  _target_: tw_benchmark.models.StaticGNN
   num_nodes: ${dataset.num_nodes}
   features_dim: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}
@@ -17,7 +17,7 @@ node_classif:
   undirected: True
 
 link_pred: 
-  _target_: dgt.models.StaticGNN
+  _target_: tw_benchmark.models.StaticGNN
   num_nodes: ${dataset.num_nodes}
   features_dim: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}
@@ -28,7 +28,7 @@ link_pred:
   undirected: True
   task_name: 'link_pred'
 node_reg: 
-  _target_: dgt.models.StaticGNN
+  _target_: tw_benchmark.models.StaticGNN
   num_nodes: ${dataset.num_nodes}
   features_dim: ${dataset.features_dim}
   num_classes: ${dataset.num_classes}
